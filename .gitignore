@@ -1,0 +1,55 @@
+# ============================================
+# .NET / Backend (ApiTiketero)
+# ============================================
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+logs/
+*.log
+appsettings.Development.json
+
+# ============================================
+# Flutter / Frontend (SistemaTicket)
+# ============================================
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+app.*.symbols
+app.*.map.json
+/android/app/debug
+/android/app/profile
+/android/app/release
+flutter/ephemeral/
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# ============================================
+# General
+# ============================================
+*.class
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+node_modules/
+dist/
+.env
+
+# Redundant / large files
+BD_Ticketero.zip
+*.docx

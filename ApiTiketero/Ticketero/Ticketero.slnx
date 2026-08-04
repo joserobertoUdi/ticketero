@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Ticketero.Api/Ticketero.Api.csproj" />
+    <Project Path="src/Ticketero.Application/Ticketero.Application.csproj" />
+    <Project Path="src/Ticketero.Domain/Ticketero.Domain.csproj" />
+    <Project Path="src/Ticketero.Infrastructure/Ticketero.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ticketero.Tests/Ticketero.Tests.csproj" />
+  </Folder>
+</Solution>

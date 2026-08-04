@@ -1,0 +1,38 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=TicketeroProd2026!
+      - MSSQL_PID=Express
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:80
+      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=DBTicketero;User=sa;Password=TicketeroProd2026!;TrustServerCertificate=true;MultipleActiveResultSets=true
+      - ConnectionStrings__Redis=redis:6379
+      - Jwt__Key=TicketeroProdSecretKey2026!ChangeMeInProduction!
+      - Jwt__Issuer=TicketeroApi
+      - Jwt__Audience=TicketeroClient
+      - Cors__Origins__0=http://localhost:4200
+    depends_on:
+      - sqlserver
+      - redis
+
+volumes:
+  sqlserver-data:
