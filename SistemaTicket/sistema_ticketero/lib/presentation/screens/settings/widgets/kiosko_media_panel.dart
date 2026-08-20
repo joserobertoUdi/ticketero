@@ -1,12 +1,19 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/constants/sharepoint_constants.dart';
+import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/area_logo_presets.dart';
 import '../../../../core/utils/image_utils.dart';
+import '../../../../data/datasources/remote/archivo_remote_datasource.dart';
+import '../../../../data/datasources/remote/multimedia_remote_datasource.dart';
 import '../../../../domain/entities/kiosko_media.dart';
 import '../../../providers/area_provider.dart';
+import '../../../providers/auth_provider.dart';
 import '../../../providers/settings_provider.dart';
 
 class KioskoMediaPanel extends StatefulWidget {
@@ -313,7 +320,7 @@ class _KioskoMediaPanelState extends State<KioskoMediaPanel> {
                         children: [
                           Icon(Icons.business, size: 16, color: AppColors.primary),
                           const SizedBox(width: 8),
-                          Text('${a.nombre} (${a.prefijo ?? ""})', style: const TextStyle(fontSize: 13)),
+                          Text('${a.nombre} (${a.prefijo})', style: const TextStyle(fontSize: 13)),
                         ],
                       ),
                     );
@@ -432,7 +439,7 @@ class _KioskoMediaPanelState extends State<KioskoMediaPanel> {
                                 });
                               },
                               title: Text(area.nombre, style: const TextStyle(fontSize: 14)),
-                              subtitle: Text(area.prefijo ?? '', style: const TextStyle(fontSize: 11)),
+                              subtitle: Text(area.prefijo, style: const TextStyle(fontSize: 11)),
                               dense: true,
                               controlAffinity: ListTileControlAffinity.trailing,
                               contentPadding: EdgeInsets.zero,
@@ -518,6 +525,16 @@ class _MultimediaConfigDialogState extends State<_MultimediaConfigDialog> {
   late TextEditingController _logoUrlCtrl;
   late TextEditingController _videoUrlCtrl;
 
+  final _archivos = ArchivoRemoteDataSource();
+
+  /// Progreso de la subida en curso (0..1), o null si no hay ninguna.
+  double? _progreso;
+  String? _subiendo; // 'logo' | 'video'
+  String? _nombreLogo;
+  String? _nombreVideo;
+
+  bool get _ocupado => _subiendo != null;
+
   @override
   void initState() {
     super.initState();
@@ -532,27 +549,76 @@ class _MultimediaConfigDialogState extends State<_MultimediaConfigDialog> {
     super.dispose();
   }
 
-  Future<void> _pickImage() async {
+  void _aviso(String mensaje, {bool esError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(mensaje),
+      backgroundColor: esError ? AppColors.error : AppColors.success,
+      duration: Duration(seconds: esError ? 8 : 3),
+    ));
+  }
+
+  /// Selecciona un archivo, lo sube a SharepointApi y deja la referencia
+  /// `sharepoint:{uid}` en el campo correspondiente.
+  Future<void> _seleccionarYSubir({required bool esVideo}) async {
+    // Se lee antes de cualquier await para no usar el context tras un gap async.
+    final usuario = context.read<AuthProvider>().user?.nombreUsuario ?? 'desconocido';
+
     final result = await FilePicker.pickFiles(
-      type: FileType.image,
+      type: FileType.custom,
+      allowedExtensions: esVideo
+          ? SharepointConstants.videoExtensions
+          : SharepointConstants.imageExtensions,
       allowMultiple: false,
+      dialogTitle: esVideo ? 'Seleccionar video de fondo' : 'Seleccionar logo',
     );
-    if (result != null && result.files.single.path != null) {
-      _logoUrlCtrl.text = result.files.single.path!;
-      setState(() {});
+
+    final path = result?.files.single.path;
+    if (path == null || !mounted) return;
+
+    setState(() {
+      _subiendo = esVideo ? 'video' : 'logo';
+      _progreso = 0;
+    });
+
+    try {
+      final subido = await _archivos.subirArchivo(
+        archivo: File(path),
+        usuarioRegistro: usuario,
+        referenciaOrigen: 'kiosko-${widget.kiosko.id}',
+        onProgress: (p) {
+          if (mounted) setState(() => _progreso = p);
+        },
+      );
+
+      if (!mounted) return;
+      setState(() {
+        if (esVideo) {
+          _videoUrlCtrl.text = subido.referencia;
+          _nombreVideo = subido.nombreArchivo;
+        } else {
+          _logoUrlCtrl.text = subido.referencia;
+          _nombreLogo = subido.nombreArchivo;
+        }
+      });
+      _aviso('"${subido.nombreArchivo}" subido correctamente.');
+    } on ArchivoException catch (e) {
+      _aviso(e.message, esError: true);
+    } catch (e) {
+      _aviso('Error inesperado al subir: $e', esError: true);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _subiendo = null;
+          _progreso = null;
+        });
+      }
     }
   }
 
-  Future<void> _pickVideo() async {
-    final result = await FilePicker.pickFiles(
-      type: FileType.video,
-      allowMultiple: false,
-    );
-    if (result != null && result.files.single.path != null) {
-      _videoUrlCtrl.text = result.files.single.path!;
-      setState(() {});
-    }
-  }
+  Future<void> _pickImage() => _seleccionarYSubir(esVideo: false);
+
+  Future<void> _pickVideo() => _seleccionarYSubir(esVideo: true);
 
   void _selectPresetLogo() {
     showDialog(
@@ -603,14 +669,69 @@ class _MultimediaConfigDialogState extends State<_MultimediaConfigDialog> {
   }
 
   Future<void> _save() async {
+    final logo = _logoUrlCtrl.text.trim();
+    final video = _videoUrlCtrl.text.trim();
+
+    // Se resuelve antes de los await para no tocar el context después.
+    final multimedia = MultimediaRemoteDataSource(context.read<ApiClient>());
+
+    // 1. Configuración local: es la que consume el kiosko al arrancar.
     await widget.settings.updateKioskoMultimedia(
       widget.kiosko.id,
-      logoUrl: _logoUrlCtrl.text.isNotEmpty ? _logoUrlCtrl.text : null,
-      videoUrl: _videoUrlCtrl.text.isNotEmpty ? _videoUrlCtrl.text : null,
-      clearLogo: _logoUrlCtrl.text.isEmpty,
-      clearVideo: _videoUrlCtrl.text.isEmpty,
+      logoUrl: logo.isNotEmpty ? logo : null,
+      videoUrl: video.isNotEmpty ? video : null,
+      clearLogo: logo.isEmpty,
+      clearVideo: video.isEmpty,
     );
-    if (mounted) Navigator.pop(context);
+
+    // 2. Registro en la API para compartirlo con el resto de kioskos.
+    //    Es best-effort: si falla, la configuración local ya quedó guardada.
+    final errores = await _registrarEnApi(multimedia, logo: logo, video: video);
+
+    if (!mounted) return;
+    Navigator.pop(context);
+
+    if (errores.isEmpty) {
+      _aviso('Configuración multimedia guardada.');
+    } else {
+      _aviso(
+        'Guardado localmente, pero no se pudo registrar en la API: ${errores.first}',
+        esError: true,
+      );
+    }
+  }
+
+  Future<List<String>> _registrarEnApi(
+    MultimediaRemoteDataSource datasource, {
+    required String logo,
+    required String video,
+  }) async {
+    final errores = <String>[];
+
+    // Solo tiene sentido registrar referencias de SharepointApi: una ruta
+    // local no la puede resolver ningún otro kiosko.
+    final pendientes = <String, String>{
+      if (SharepointConstants.isRef(logo)) MultimediaRemoteDataSource.tipoLogo: logo,
+      if (SharepointConstants.isRef(video)) MultimediaRemoteDataSource.tipoVideo: video,
+    };
+    if (pendientes.isEmpty) return errores;
+
+    for (final entrada in pendientes.entries) {
+      try {
+        await datasource.reemplazar(
+          kioskoId: widget.kiosko.id,
+          tipoContenido: entrada.key,
+          nombreContenido: entrada.key == MultimediaRemoteDataSource.tipoVideo
+              ? (_nombreVideo ?? 'Video de fondo')
+              : (_nombreLogo ?? 'Logo del kiosko'),
+          referencia: entrada.value,
+        );
+      } catch (e) {
+        errores.add('${entrada.key}: $e');
+      }
+    }
+
+    return errores;
   }
 
   @override
@@ -648,29 +769,34 @@ class _MultimediaConfigDialogState extends State<_MultimediaConfigDialog> {
               Row(
                 children: [
                   OutlinedButton.icon(
-                    onPressed: _pickImage,
-                    icon: const Icon(Icons.folder_open, size: 16),
-                    label: const Text('Examinar', style: TextStyle(fontSize: 12)),
+                    onPressed: _ocupado ? null : _pickImage,
+                    icon: const Icon(Icons.cloud_upload_outlined, size: 16),
+                    label: const Text('Subir imagen', style: TextStyle(fontSize: 12)),
                   ),
                   const SizedBox(width: 8),
                   OutlinedButton.icon(
-                    onPressed: _selectPresetLogo,
+                    onPressed: _ocupado ? null : _selectPresetLogo,
                     icon: const Icon(Icons.grid_view, size: 16),
                     label: const Text('Icono prediseñado', style: TextStyle(fontSize: 12)),
                   ),
                   const SizedBox(width: 8),
                   if (_logoUrlCtrl.text.isNotEmpty)
                     OutlinedButton.icon(
-                      onPressed: () {
-                        _logoUrlCtrl.clear();
-                        setState(() {});
-                      },
+                      onPressed: _ocupado
+                          ? null
+                          : () {
+                              _logoUrlCtrl.clear();
+                              _nombreLogo = null;
+                              setState(() {});
+                            },
                       icon: const Icon(Icons.close, size: 16),
                       label: const Text('Quitar', style: TextStyle(fontSize: 12)),
                       style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
                     ),
                 ],
               ),
+              if (_subiendo == 'logo') _buildProgreso(),
+              _buildOrigen(_logoUrlCtrl.text, _nombreLogo),
               const SizedBox(height: 24),
               const Text('Video de Fondo', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
               const SizedBox(height: 8),
@@ -706,40 +832,97 @@ class _MultimediaConfigDialogState extends State<_MultimediaConfigDialog> {
               Row(
                 children: [
                   OutlinedButton.icon(
-                    onPressed: _pickVideo,
-                    icon: const Icon(Icons.folder_open, size: 16),
-                    label: const Text('Examinar video', style: TextStyle(fontSize: 12)),
+                    onPressed: _ocupado ? null : _pickVideo,
+                    icon: const Icon(Icons.cloud_upload_outlined, size: 16),
+                    label: const Text('Subir video', style: TextStyle(fontSize: 12)),
                   ),
                   const SizedBox(width: 8),
                   if (_videoUrlCtrl.text.isNotEmpty)
                     OutlinedButton.icon(
-                      onPressed: () {
-                        _videoUrlCtrl.clear();
-                        setState(() {});
-                      },
+                      onPressed: _ocupado
+                          ? null
+                          : () {
+                              _videoUrlCtrl.clear();
+                              _nombreVideo = null;
+                              setState(() {});
+                            },
                       icon: const Icon(Icons.close, size: 16),
                       label: const Text('Quitar', style: TextStyle(fontSize: 12)),
                       style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
                     ),
                 ],
               ),
-              const SizedBox(height: 8),
-              const Text('Formatos: PNG, JPG, ICO (logo) | MP4, AVI, MOV (video)',
-                  style: TextStyle(fontSize: 11, color: Colors.grey)),
+              if (_subiendo == 'video') _buildProgreso(),
+              _buildOrigen(_videoUrlCtrl.text, _nombreVideo),
+              const SizedBox(height: 12),
+              Text(
+                'Formatos: ${SharepointConstants.imageExtensions.join(', ').toUpperCase()} (logo)  |  '
+                '${SharepointConstants.videoExtensions.join(', ').toUpperCase()} (video)\n'
+                'Los archivos se suben al servicio central, así que quedan disponibles '
+                'para todos los kioskos. Máximo '
+                '${SharepointConstants.maxFileSizeBytes ~/ (1024 * 1024)} MB.',
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+              ),
             ],
           ),
         ),
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: _ocupado ? null : () => Navigator.pop(context),
           child: const Text('Cancelar'),
         ),
         ElevatedButton(
-          onPressed: _save,
-          child: const Text('Guardar configuración'),
+          onPressed: _ocupado ? null : _save,
+          child: Text(_ocupado ? 'Subiendo…' : 'Guardar configuración'),
         ),
       ],
+    );
+  }
+
+  Widget _buildProgreso() {
+    final pct = _progreso != null ? '${(_progreso! * 100).toStringAsFixed(0)}%' : '';
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LinearProgressIndicator(value: _progreso),
+          const SizedBox(height: 4),
+          Text('Subiendo al servicio central… $pct',
+              style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+        ],
+      ),
+    );
+  }
+
+  /// Aclara de dónde sale el archivo, porque una referencia `sharepoint:{uid}`
+  /// no dice nada por sí sola.
+  Widget _buildOrigen(String valor, String? nombreArchivo) {
+    if (valor.isEmpty || AreaLogoPreset.isPreset(valor)) return const SizedBox.shrink();
+
+    final esRemoto = SharepointConstants.isRef(valor) || valor.startsWith('http');
+    final texto = SharepointConstants.isRef(valor)
+        ? 'En el servicio central${nombreArchivo != null ? ' · $nombreArchivo' : ''}'
+        : valor.startsWith('http')
+            ? 'URL externa'
+            : 'Ruta local: solo funciona en este equipo';
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          Icon(esRemoto ? Icons.cloud_done_outlined : Icons.warning_amber_outlined,
+              size: 14, color: esRemoto ? AppColors.success : Colors.orange),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(texto,
+                style: TextStyle(
+                    fontSize: 11,
+                    color: esRemoto ? AppColors.success : Colors.orange)),
+          ),
+        ],
+      ),
     );
   }
 

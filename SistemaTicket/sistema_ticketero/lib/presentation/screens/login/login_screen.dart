@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../providers/kiosko_fisico_provider.dart';
 import '../../providers/settings_provider.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -25,6 +26,39 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  /// Vuelve a leer de la API el kiosko ya seleccionado y reescribe su
+  /// multimedia y áreas en las preferencias.
+  ///
+  /// Es lo que hace `kiosko_selection_screen`, pero esa pantalla se omite
+  /// cuando ya hay un kiosko elegido, así que sin esto la configuración se
+  /// quedaba congelada en el valor que tuviera el día que se seleccionó.
+  Future<void> _refrescarKioskoDesdeApi() async {
+    final settings = context.read<SettingsProvider>();
+    if (!settings.hasKioskoSelected) return;
+
+    final kf = context.read<KioskoFisicoProvider>();
+    try {
+      await kf.loadAll();
+      final actual =
+          kf.kioskos.where((k) => k.id == settings.selectedKioskoId).firstOrNull;
+      if (actual == null) return;
+
+      await settings.setSelectedKioskoId(
+        actual.id,
+        areaIds: actual.areaIds,
+        logoUrl: actual.logoUrl,
+        videoUrl: actual.videoUrl,
+        nombre: actual.nombre,
+      );
+      debugPrint('[Login] Kiosko ${actual.id} refrescado. '
+          'video="${actual.videoUrl ?? ''}" logo="${actual.logoUrl ?? ''}"');
+    } catch (e) {
+      // Sin red se sigue con lo último conocido: es preferible un video viejo
+      // a dejar la pantalla del kiosko en blanco.
+      debugPrint('[Login] No se pudo refrescar el kiosko: $e');
+    }
+  }
+
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -41,6 +75,14 @@ class _LoginScreenState extends State<LoginScreen> {
       if (user != null && (user.isAdmin || user.isSupervisor)) {
         Navigator.pushReplacementNamed(context, '/dashboard');
       } else if (user != null && user.isCaller) {
+        // La configuración del kiosko (logo, video, áreas) se guarda en
+        // SharedPreferences como una foto tomada al seleccionarlo. Si no se
+        // refresca aquí, un cambio hecho desde Kioskos Admin no llega nunca:
+        // el login se salta la pantalla de selección cuando ya hay un kiosko
+        // elegido, y la ventana del llamador solo lee las preferencias.
+        await _refrescarKioskoDesdeApi();
+        if (!mounted) return;
+
         bool found = false;
         for (final c in await WindowController.getAll()) {
           if (c.arguments == 'caller') {

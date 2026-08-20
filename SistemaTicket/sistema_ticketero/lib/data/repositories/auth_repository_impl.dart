@@ -1,4 +1,5 @@
 import 'package:dartz/dartz.dart';
+import 'package:dio/dio.dart';
 import '../../core/enums/user_role.dart';
 import '../../core/errors/failures.dart';
 import '../../core/network/api_client.dart';
@@ -36,9 +37,56 @@ class AuthRepositoryImpl implements AuthRepository {
       _client.setToken(response.token);
       return Right(response.toAuthResult());
     } catch (e) {
-      return Left(ServerFailure(
-          message: 'Credenciales invalidas o error de conexion'));
+      return Left(_mapError(e, contexto: 'iniciar sesión'));
     }
+  }
+
+  /// Traduce una excepción a un [Failure] concreto.
+  ///
+  /// Antes todo caía en un mensaje único de "credenciales inválidas", lo que
+  /// hacía indistinguible un 401 real de un fallo del servidor o de red.
+  Failure _mapError(Object e, {required String contexto}) {
+    if (e is DioException) {
+      final status = e.response?.statusCode;
+
+      if (status == 401) {
+        return const AuthFailure(
+            message: 'Correo o contraseña incorrectos', statusCode: 401);
+      }
+
+      if (status != null) {
+        return ServerFailure(
+          message: 'El servidor respondió $status: ${_mensajeServidor(e.response?.data) ?? 'error al $contexto'}',
+          statusCode: status,
+        );
+      }
+
+      switch (e.type) {
+        case DioExceptionType.connectionError:
+        case DioExceptionType.connectionTimeout:
+          return const ConnectionFailure(
+              message: 'No se pudo conectar con la API. ¿Está levantada en localhost:5000?');
+        case DioExceptionType.receiveTimeout:
+        case DioExceptionType.sendTimeout:
+          return const ConnectionFailure(
+              message: 'La API no respondió a tiempo.');
+        default:
+          return ConnectionFailure(message: 'Error de red al $contexto: ${e.message ?? e.type.name}');
+      }
+    }
+
+    // Fallos locales: almacenamiento seguro, parseo del JSON, etc.
+    return ServerFailure(message: 'Error al $contexto: $e');
+  }
+
+  /// Extrae el campo `mensaje` que devuelven los controladores y el
+  /// middleware de errores de la API.
+  String? _mensajeServidor(dynamic data) {
+    if (data is Map && data['mensaje'] is String) {
+      final mensaje = data['mensaje'] as String;
+      return mensaje.length > 200 ? '${mensaje.substring(0, 200)}…' : mensaje;
+    }
+    return null;
   }
 
   @override
@@ -79,7 +127,7 @@ class AuthRepositoryImpl implements AuthRepository {
         expiresAt: DateTime.now().add(const Duration(hours: 8)),
       ));
     } catch (e) {
-      return Left(ServerFailure(message: 'Error al refrescar token'));
+      return Left(_mapError(e, contexto: 'refrescar el token'));
     }
   }
 
@@ -96,7 +144,7 @@ class AuthRepositoryImpl implements AuthRepository {
       final sesionId = data['sesionOperadorId'] as int;
       return Right(sesionId);
     } catch (e) {
-      return Left(ServerFailure(message: 'Error al abrir sesión: $e'));
+      return Left(_mapError(e, contexto: 'abrir la sesión'));
     }
   }
 
@@ -106,7 +154,7 @@ class AuthRepositoryImpl implements AuthRepository {
       await _remote.closeSession(sesionOperadorId);
       return Right(unit);
     } catch (e) {
-      return Left(ServerFailure(message: 'Error al cerrar sesión: $e'));
+      return Left(_mapError(e, contexto: 'cerrar la sesión'));
     }
   }
 

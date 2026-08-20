@@ -6,6 +6,7 @@ using Ticketero.Api.Mapping;
 using Ticketero.Application.DTOs;
 using Ticketero.Application.Interfaces;
 using Ticketero.Domain.Entities;
+using Ticketero.Domain.Enums;
 
 namespace Ticketero.Api.Controllers;
 
@@ -54,8 +55,8 @@ public class KioskosFisicosController : ControllerBase
                 redes.FirstOrDefault(r => r.KioskoId == k.Id),
                 areaIds,
                 activosFijos.Where(a => a.KioskoId == k.Id).ToList(),
-                logoUrl: mm?.FirstOrDefault(m => m.TipoContenido == "Logo")?.RutaArchivo,
-                videoUrl: mm?.FirstOrDefault(m => m.TipoContenido == "Video")?.RutaArchivo);
+                logoUrl: mm?.FirstOrDefault(m => TipoContenidoMultimedia.EsLogo(m.TipoContenido))?.RutaArchivo,
+                videoUrl: mm?.FirstOrDefault(m => TipoContenidoMultimedia.EsVideo(m.TipoContenido))?.RutaArchivo);
         }).ToList();
 
         return Ok(result);
@@ -83,8 +84,8 @@ public class KioskosFisicosController : ControllerBase
             redes.FirstOrDefault(),
             areaIds,
             activosFijos.ToList(),
-            logoUrl: multimedia.FirstOrDefault(m => m.TipoContenido == "Logo")?.RutaArchivo,
-            videoUrl: multimedia.FirstOrDefault(m => m.TipoContenido == "Video")?.RutaArchivo));
+            logoUrl: multimedia.FirstOrDefault(m => TipoContenidoMultimedia.EsLogo(m.TipoContenido))?.RutaArchivo,
+            videoUrl: multimedia.FirstOrDefault(m => TipoContenidoMultimedia.EsVideo(m.TipoContenido))?.RutaArchivo));
     }
 
     [HttpPost("auto-registrar")]
@@ -113,8 +114,8 @@ public class KioskosFisicosController : ControllerBase
             var multimedia = await _unitOfWork.ConfiguracionesMultimedia.FindAsync(m => m.KioskoId == existente.Id && m.Estado);
 
             return Ok(MappingService.MapToKioskoFisicoResponse(existente, ubi, imp, red, areas, activos,
-                logoUrl: multimedia.FirstOrDefault(m => m.TipoContenido == "Logo")?.RutaArchivo,
-                videoUrl: multimedia.FirstOrDefault(m => m.TipoContenido == "Video")?.RutaArchivo));
+                logoUrl: multimedia.FirstOrDefault(m => TipoContenidoMultimedia.EsLogo(m.TipoContenido))?.RutaArchivo,
+                videoUrl: multimedia.FirstOrDefault(m => TipoContenidoMultimedia.EsVideo(m.TipoContenido))?.RutaArchivo));
         }
 
         var nuevo = new Kiosko
@@ -283,8 +284,8 @@ public class KioskosFisicosController : ControllerBase
                 redes.FirstOrDefault(),
                 request.AreaIds,
                 activosFijos.ToList(),
-                logoUrl: multimedia.FirstOrDefault(m => m.TipoContenido == "Logo")?.RutaArchivo,
-                videoUrl: multimedia.FirstOrDefault(m => m.TipoContenido == "Video")?.RutaArchivo));
+                logoUrl: multimedia.FirstOrDefault(m => TipoContenidoMultimedia.EsLogo(m.TipoContenido))?.RutaArchivo,
+                videoUrl: multimedia.FirstOrDefault(m => TipoContenidoMultimedia.EsVideo(m.TipoContenido))?.RutaArchivo));
     }
 
     [HttpPut("{id}")]
@@ -386,6 +387,9 @@ public class KioskosFisicosController : ControllerBase
         if (request.LogoUrl != null)
         {
             var logo = (await _unitOfWork.ConfiguracionesMultimedia
+                // Comparación directa a propósito: esto lo traduce EF Core a SQL,
+                // donde la colación por defecto ya ignora mayúsculas. Un método
+                // propio aquí no sería traducible.
                 .FindAsync(m => m.KioskoId == id && m.TipoContenido == "Logo" && m.Estado)).FirstOrDefault();
             if (logo != null)
             {
@@ -408,6 +412,7 @@ public class KioskosFisicosController : ControllerBase
         if (request.VideoUrl != null)
         {
             var video = (await _unitOfWork.ConfiguracionesMultimedia
+                // Igual que arriba: comparación traducible a SQL.
                 .FindAsync(m => m.KioskoId == id && m.TipoContenido == "Video" && m.Estado)).FirstOrDefault();
             if (video != null)
             {
@@ -547,8 +552,8 @@ public class KioskosFisicosController : ControllerBase
             redes.FirstOrDefault(),
             areaIds,
             activosFijos.ToList(),
-            logoUrl: multimedia.FirstOrDefault(m => m.TipoContenido == "Logo")?.RutaArchivo,
-            videoUrl: multimedia.FirstOrDefault(m => m.TipoContenido == "Video")?.RutaArchivo));
+            logoUrl: multimedia.FirstOrDefault(m => TipoContenidoMultimedia.EsLogo(m.TipoContenido))?.RutaArchivo,
+            videoUrl: multimedia.FirstOrDefault(m => TipoContenidoMultimedia.EsVideo(m.TipoContenido))?.RutaArchivo));
     }
 
     [HttpGet("{id}/printer-config")]

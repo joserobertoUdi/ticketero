@@ -13,7 +13,55 @@ class ServiceType {
     this.iconName = 'help_outline',
   });
 
-  IconData get icon => _iconMap[iconName] ?? Icons.help_outline;
+  /// Icono del servicio.
+  ///
+  /// Si no se le asignó uno explícitamente, se deduce del nombre. La mayoría de
+  /// los servicios se dan de alta sin elegir icono, y una pantalla de kiosko
+  /// llena de interrogaciones no ayuda a nadie a decidir dónde tocar.
+  IconData get icon {
+    final explicito = _iconMap[iconName];
+    if (explicito != null && iconName != 'help_outline') return explicito;
+    return _deducirPorNombre(nombre) ?? Icons.help_outline;
+  }
+
+  static IconData? _deducirPorNombre(String nombre) {
+    final n = _sinAcentos(nombre.toLowerCase());
+
+    for (final (claves, icono) in _porPalabraClave) {
+      if (claves.any(n.contains)) return icono;
+    }
+    return null;
+  }
+
+  /// El orden importa: gana la primera coincidencia, así que las palabras más
+  /// específicas van antes que las genéricas.
+  static const List<(List<String>, IconData)> _porPalabraClave = [
+    (['pago', 'pagar', 'cobro', 'caja'], Icons.payments),
+    (['retiro', 'retirar', 'entrega'], Icons.outbox),
+    (['deposito', 'recepcion'], Icons.inbox),
+    (['consulta', 'pregunta', 'duda'], Icons.live_help),
+    (['informacion', 'informe'], Icons.info_outline),
+    (['inscripcion', 'matricula', 'registro', 'alta'], Icons.app_registration),
+    (['certificad', 'constancia'], Icons.workspace_premium),
+    (['documento', 'papel'], Icons.description),
+    (['recibo', 'factura', 'comprobante'], Icons.receipt_long),
+    (['reclamo', 'queja', 'soporte', 'atencion'], Icons.support_agent),
+    (['renovacion', 'renovar', 'actualiza'], Icons.refresh),
+    (['tramite', 'solicitud'], Icons.assignment),
+    (['verificacion', 'validar', 'revision'], Icons.fact_check),
+    (['busqueda', 'buscar'], Icons.search),
+    (['beca', 'ayuda'], Icons.volunteer_activism),
+  ];
+
+  static String _sinAcentos(String texto) {
+    const con = 'áéíóúüñ';
+    const sin = 'aeiouun';
+    var r = texto;
+    for (var i = 0; i < con.length; i++) {
+      r = r.replaceAll(con[i], sin[i]);
+    }
+    return r;
+  }
 
   static const Map<String, IconData> _iconMap = {
     'payments': Icons.payments,

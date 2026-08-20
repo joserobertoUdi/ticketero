@@ -1,7 +1,11 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+
+import '../../../../core/constants/sharepoint_constants.dart';
+import '../../../../core/utils/multimedia_cache.dart';
 
 class BackgroundVideoWidget extends StatefulWidget {
   final String? videoUrl;
@@ -32,34 +36,55 @@ class _BackgroundVideoWidgetState extends State<BackgroundVideoWidget> {
     }
   }
 
-  void _initVideo() {
+  Future<void> _initVideo() async {
     final url = widget.videoUrl;
     if (url == null || url.isEmpty) {
+      debugPrint('[BackgroundVideo] Sin videoUrl: el kiosko seleccionado no '
+          'tiene video configurado, o no se ha refrescado desde la API.');
       _videoError = true;
       return;
     }
+    debugPrint('[BackgroundVideo] videoUrl recibido: "$url"');
 
     try {
-      if (url.startsWith('http://') || url.startsWith('https://')) {
-        _controller = VideoPlayerController.networkUrl(Uri.parse(url));
-      } else {
-        _controller = VideoPlayerController.file(File(url));
-      }
-      _controller!.initialize().then((_) {
-        if (mounted) {
-          _controller!.setLooping(true);
-          _controller!.play();
-          setState(() => _videoError = false);
-        }
-      }).catchError((e) {
-        if (mounted) {
-          _disposeVideo();
+      final VideoPlayerController controller;
+
+      if (SharepointConstants.isRef(url)) {
+        // Se descarga a disco en vez de reproducir por red: video_player_win
+        // delega en Media Foundation, que abre la URL por su cuenta y no envía
+        // la cabecera ProviderKey, con lo que recibiría un 401.
+        final ruta = await MultimediaCache.rutaLocal(url);
+        if (!mounted) return;
+        if (ruta == null) {
+          debugPrint('[BackgroundVideo] No se pudo descargar $url');
           setState(() => _videoError = true);
+          return;
         }
-      });
-    } catch (_) {
+        controller = VideoPlayerController.file(File(ruta));
+      } else if (url.startsWith('http://') || url.startsWith('https://')) {
+        controller = VideoPlayerController.networkUrl(Uri.parse(url));
+      } else {
+        controller = VideoPlayerController.file(File(url));
+      }
+
+      _controller = controller;
+      await controller.initialize();
+
+      if (!mounted) {
+        _disposeVideo();
+        return;
+      }
+
+      await controller.setLooping(true);
+      await controller.play();
+      setState(() => _videoError = false);
+    } catch (e, stack) {
+      // Antes esto se tragaba en silencio y la pantalla quedaba en blanco sin
+      // ninguna pista de por qué.
+      debugPrint('[BackgroundVideo] Fallo al reproducir "${widget.videoUrl}": $e');
+      debugPrintStack(stackTrace: stack, maxFrames: 6);
       _disposeVideo();
-      _videoError = true;
+      if (mounted) setState(() => _videoError = true);
     }
   }
 

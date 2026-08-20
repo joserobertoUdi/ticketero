@@ -51,17 +51,32 @@ class SettingsProvider extends ChangeNotifier {
 
   KioskoMedia? get selectedKiosko {
     if (_selectedKioskoId == null) return null;
-    try {
-      return _kioskoLocations.firstWhere((k) => k.id == _selectedKioskoId);
-    } catch (_) {
+
+    // Valores que llegaron del servidor al seleccionar el kiosko.
+    final logoServidor = _selectedKioskoLogoUrl ?? '';
+    final videoServidor = _selectedKioskoVideoUrl ?? '';
+
+    final local = _kioskoLocations
+        .where((k) => k.id == _selectedKioskoId)
+        .firstOrNull;
+
+    if (local == null) {
       return KioskoMedia(
         id: _selectedKioskoId!,
         nombre: _selectedKioskoNombre,
         areaIds: _selectedKioskoAreaIds,
-        logoUrl: _selectedKioskoLogoUrl ?? '',
-        videoUrl: _selectedKioskoVideoUrl ?? '',
+        logoUrl: logoServidor,
+        videoUrl: videoServidor,
       );
     }
+
+    // La entrada local manda solo cuando tiene contenido. Antes, un kiosko
+    // guardado localmente sin multimedia tapaba la configuración del servidor
+    // y la pantalla quedaba en blanco sin ninguna pista de por qué.
+    return local.copyWith(
+      logoUrl: local.logoUrl.isNotEmpty ? local.logoUrl : logoServidor,
+      videoUrl: local.videoUrl.isNotEmpty ? local.videoUrl : videoServidor,
+    );
   }
 
   Set<int> get kioskoAreaIds =>

@@ -103,36 +103,81 @@ class CallerWindowScreen extends StatefulWidget {
   State<CallerWindowScreen> createState() => _CallerWindowScreenState();
 }
 
-class _CallerWindowScreenState extends State<CallerWindowScreen> {
+class _CallerWindowScreenState extends State<CallerWindowScreen> with WindowListener {
+  DateTime? _ultimaCarga;
+
   @override
   void initState() {
     super.initState();
+    windowManager.addListener(this);
     _listenChannel();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadSettings();
     });
   }
 
+  @override
+  void dispose() {
+    windowManager.removeListener(this);
+    super.dispose();
+  }
+
+  /// Esta ventana no se cierra entre sesiones: el login la reutiliza con
+  /// `show()` si ya existe, y entonces `initState` no vuelve a ejecutarse. Sin
+  /// recargar al recibir el foco, se quedaba con la configuración que tenía el
+  /// día que se abrió.
+  @override
+  void onWindowFocus() {
+    final ahora = DateTime.now();
+    if (_ultimaCarga != null && ahora.difference(_ultimaCarga!).inSeconds < 5) {
+      return;
+    }
+    _loadSettings();
+  }
+
   Future<void> _loadSettings() async {
+    _ultimaCarga = DateTime.now();
+
     final sp = Provider.of<SettingsProvider>(context, listen: false);
     final kioskoProvider = Provider.of<KioskoFisicoProvider>(context, listen: false);
+    final apiClient = Provider.of<ApiClient>(context, listen: false);
     await sp.loadSettings();
+
+    // Esta ventana es un motor Flutter aparte y construye su propio ApiClient,
+    // que nace sin token. Sin esto, /api/kioskos-fisicos responde 401 y la
+    // lista llega vacía, sin error visible.
+    final token = await AuthLocalDataSource(const FlutterSecureStorage()).getToken();
+    if (token == null || token.isEmpty) {
+      debugPrint('[Caller] Sin token guardado: no se puede consultar la API.');
+      return;
+    }
+    apiClient.setToken(token);
 
     try {
       await kioskoProvider.loadAll();
       final activos = kioskoProvider.kioskosActivos;
-      if (activos.isNotEmpty) {
-        final k = activos.first;
-        await sp.setSelectedKioskoId(
-          k.id,
-          areaIds: k.areaIds,
-          logoUrl: k.logoUrl,
-          videoUrl: k.videoUrl,
-          nombre: k.nombre,
-        );
+      if (activos.isEmpty) {
+        debugPrint('[Caller] La API no devolvió kioskos activos '
+            '(${kioskoProvider.kioskos.length} en total).');
+        return;
       }
-    } catch (_) {
-      // si la API falla, la config local de SharedPreferences ya cargó
+
+      // El kiosko elegido manda; `first` solo como respaldo, porque con varios
+      // kioskos activos elegiría uno al azar.
+      final k = activos.where((x) => x.id == sp.selectedKioskoId).firstOrNull ??
+          activos.first;
+
+      await sp.setSelectedKioskoId(
+        k.id,
+        areaIds: k.areaIds,
+        logoUrl: k.logoUrl,
+        videoUrl: k.videoUrl,
+        nombre: k.nombre,
+      );
+      debugPrint('[Caller] Kiosko ${k.id} cargado. video="${k.videoUrl ?? ''}"');
+    } catch (e) {
+      // Sin API se sigue con lo que ya había en SharedPreferences.
+      debugPrint('[Caller] No se pudo refrescar el kiosko: $e');
     }
   }
 

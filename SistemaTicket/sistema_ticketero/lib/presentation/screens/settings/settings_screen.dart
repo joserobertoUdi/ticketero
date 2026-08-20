@@ -6,6 +6,7 @@ import '../../providers/area_provider.dart';
 import '../../providers/settings_provider.dart';
 import 'widgets/user_management_panel.dart';
 import 'widgets/area_management_panel.dart';
+import 'widgets/kiosko_media_panel.dart';
 import 'widgets/kioskos_administracion_panel.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -22,6 +23,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _PanelItem('Usuarios', Icons.people, UserManagementPanel()),
     _PanelItem('Áreas', Icons.business, AreaManagementPanel()),
     _PanelItem('Kioskos Admin', Icons.document_scanner, KioskosAdministracionPanel()),
+    _PanelItem('Multimedia', Icons.perm_media_outlined, KioskoMediaPanel()),
   ];
 
   @override

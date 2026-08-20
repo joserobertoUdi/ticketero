@@ -13,6 +13,7 @@ import '../../../providers/kiosko_fisico_provider.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../../domain/entities/activo_fijo.dart';
 import '../../../../domain/entities/kiosko_fisico.dart';
+import 'campo_multimedia.dart';
 import 'printer_config_panel.dart';
 
 class KioskosAdministracionPanel extends StatefulWidget {
@@ -414,19 +415,21 @@ class _KioskosAdministracionPanelState
                           ],
                         ),
                         const SizedBox(height: 8),
-                        TextField(
-                            controller: logoUrlCtrl,
-                            decoration: const InputDecoration(
-                                labelText: 'URL del Logo',
-                                hintText: 'https://ejemplo.com/logo.png',
-                                border: OutlineInputBorder())),
-                        const SizedBox(height: 8),
-                        TextField(
-                            controller: videoUrlCtrl,
-                            decoration: const InputDecoration(
-                                labelText: 'URL del Video',
-                                hintText: 'https://ejemplo.com/video.mp4',
-                                border: OutlineInputBorder())),
+                        CampoMultimedia(
+                          controller: logoUrlCtrl,
+                          label: 'Logo del kiosko',
+                          esVideo: false,
+                          referenciaOrigen: 'kiosko-${existing?.id ?? 'nuevo'}',
+                          onCambio: () => setDialogState(() {}),
+                        ),
+                        const SizedBox(height: 12),
+                        CampoMultimedia(
+                          controller: videoUrlCtrl,
+                          label: 'Video de fondo',
+                          esVideo: true,
+                          referenciaOrigen: 'kiosko-${existing?.id ?? 'nuevo'}',
+                          onCambio: () => setDialogState(() {}),
+                        ),
                         const SizedBox(height: 16),
                         _sectionHeader(Icons.category, 'Asignación de Áreas'),
                         const SizedBox(height: 8),

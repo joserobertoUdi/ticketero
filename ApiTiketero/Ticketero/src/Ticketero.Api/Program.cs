@@ -185,10 +185,27 @@ try
 
     Log.Information("Ticketero API iniciada correctamente");
     app.Run();
+    return 0;
 }
 catch (Exception ex)
 {
     Log.Fatal(ex, "La aplicación terminó inesperadamente");
+
+    // La consola de Visual Studio y los orquestadores (servicios de Windows,
+    // Docker, CI) solo miran el codigo de salida. Devolver 0 aqui hacia que un
+    // fallo de arranque -- puerto ocupado, cadena de conexion invalida, Jwt:Key
+    // ausente -- pareciera una terminacion normal.
+    Console.Error.WriteLine();
+    Console.Error.WriteLine("=== LA API NO PUDO INICIARSE ===");
+    Console.Error.WriteLine(ex.Message);
+    if (ex.InnerException != null)
+    {
+        Console.Error.WriteLine($"Causa: {ex.InnerException.Message}");
+    }
+    Console.Error.WriteLine("Detalle completo en logs/ticketero-{fecha}.log");
+    Console.Error.WriteLine();
+
+    return 1;
 }
 finally
 {

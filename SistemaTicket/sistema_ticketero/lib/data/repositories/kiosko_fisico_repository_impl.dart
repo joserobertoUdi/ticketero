@@ -42,22 +42,48 @@ class KioskoFisicoRepositoryImpl implements KioskoFisicoRepository {
     return null;
   }
 
+  /// Convierte una excepción en un [Failure] con el motivo real.
+  ///
+  /// La API responde de dos formas distintas según dónde falle: ModelState
+  /// (`{errors: {...}}`) para validación de atributos, y su propio formato
+  /// (`{error, mensaje, codigo}`) desde el middleware. Antes solo se entendía
+  /// el primero, así que el segundo llegaba al usuario como el `toString()` de
+  /// Dio, que no dice nada útil.
+  Failure _mapError(Object e, String accion) {
+    if (e is! DioException) return ServerFailure(message: 'Error al $accion: $e');
+
+    final errores = _parseValidationErrors(e);
+    if (errores != null) {
+      return ValidationFailure(message: 'Error de validación', errors: errores);
+    }
+
+    final data = e.response?.data;
+    final status = e.response?.statusCode;
+
+    if (data is Map) {
+      final mensaje = data['mensaje'] ?? data['title'] ?? data['detail'];
+      if (mensaje is String && mensaje.isNotEmpty) {
+        return ServerFailure(message: 'Error al $accion ($status): $mensaje', statusCode: status);
+      }
+    }
+
+    if (status != null) {
+      return ServerFailure(
+        message: 'Error al $accion ($status): ${data ?? e.message}',
+        statusCode: status,
+      );
+    }
+
+    return ConnectionFailure(message: 'Sin respuesta de la API al $accion: ${e.message}');
+  }
+
   @override
   Future<Either<Failure, KioskoFisico>> create(Map<String, dynamic> data) async {
     try {
       final model = await _remote.create(data);
       return Right(model.toEntity());
     } catch (e) {
-      if (e is DioException) {
-        final errors = _parseValidationErrors(e);
-        if (errors != null) {
-          return Left(ValidationFailure(
-            message: 'Error de validación',
-            errors: errors,
-          ));
-        }
-      }
-      return Left(ServerFailure(message: 'Error al crear kiosko físico: $e'));
+      return Left(_mapError(e, 'crear el kiosko'));
     }
   }
 
@@ -67,16 +93,7 @@ class KioskoFisicoRepositoryImpl implements KioskoFisicoRepository {
       final model = await _remote.update(id, data);
       return Right(model.toEntity());
     } catch (e) {
-      if (e is DioException) {
-        final errors = _parseValidationErrors(e);
-        if (errors != null) {
-          return Left(ValidationFailure(
-            message: 'Error de validación',
-            errors: errors,
-          ));
-        }
-      }
-      return Left(ServerFailure(message: 'Error al actualizar kiosko físico: $e'));
+      return Left(_mapError(e, 'actualizar el kiosko'));
     }
   }
 

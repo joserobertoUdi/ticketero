@@ -11,6 +11,7 @@ import '../../../core/utils/image_utils.dart';
 import '../../../core/utils/logger.dart';
 import '../../../domain/entities/service_type.dart';
 import '../../providers/area_provider.dart';
+import '../../providers/kiosko_fisico_provider.dart';
 import '../../providers/ticket_provider.dart';
 import '../../providers/settings_provider.dart';
 import 'widgets/area_selector_card.dart';
@@ -42,7 +43,87 @@ class _TicketSelectionScreenState extends State<TicketSelectionScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<AreaProvider>(context, listen: false).loadAreas();
+      _refrescarKiosko();
     });
+  }
+
+  /// Cuadrícula de servicios con reparto equilibrado.
+  ///
+  /// Con un número fijo de columnas, cuatro servicios quedaban como 3 + 1: una
+  /// tarjeta suelta y descentrada en la segunda fila. Aquí el número de
+  /// columnas se elige para que las filas queden lo más parejas posible, y se
+  /// limita el ancho para que con pocos servicios no se estiren de lado a lado
+  /// de una pantalla de kiosko.
+  Widget _buildGridServicios() {
+    final total = _serviceTypes.length;
+
+    final columnas = switch (total) {
+      1 => 1,
+      2 || 4 => 2,
+      3 || 6 || 9 => 3,
+      _ => total <= 8 ? 4 : 5,
+    };
+
+    final anchoMaximo = columnas * 300.0;
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: anchoMaximo),
+        child: GridView.builder(
+          padding: const EdgeInsets.fromLTRB(32, 24, 32, 8),
+          shrinkWrap: true,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columnas,
+            childAspectRatio: 1.05,
+            crossAxisSpacing: 24,
+            mainAxisSpacing: 24,
+          ),
+          itemCount: total,
+          itemBuilder: (context, index) {
+            final st = _serviceTypes[index];
+            return ServiceTypeCard(
+              label: st.nombre,
+              icon: st.icon,
+              isSelected: _selectedServiceType?.id == st.id,
+              onTap: () => _onServiceTypeSelected(st),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Relee del servidor la configuración del kiosko ya seleccionado.
+  ///
+  /// Hace falta porque esta pantalla se alcanza por dos caminos que se saltan
+  /// la selección de kiosko: el login con un kiosko ya elegido, y la sesión
+  /// restaurada al abrir la app. Sin esto, el logo y el video se quedan
+  /// congelados en el valor que tuvieran cuando se seleccionó el kiosko.
+  Future<void> _refrescarKiosko() async {
+    final settings = Provider.of<SettingsProvider>(context, listen: false);
+    if (!settings.hasKioskoSelected) return;
+
+    final kf = Provider.of<KioskoFisicoProvider>(context, listen: false);
+    try {
+      await kf.loadAll();
+      final actual =
+          kf.kioskos.where((k) => k.id == settings.selectedKioskoId).firstOrNull;
+      if (actual == null) {
+        AppLogger.warn('Kiosko', 'El kiosko ${settings.selectedKioskoId} ya no existe en la API');
+        return;
+      }
+      await settings.setSelectedKioskoId(
+        actual.id,
+        areaIds: actual.areaIds,
+        logoUrl: actual.logoUrl,
+        videoUrl: actual.videoUrl,
+        nombre: actual.nombre,
+      );
+      debugPrint('[Tiquetero] Kiosko ${actual.id} refrescado. '
+          'video="${actual.videoUrl ?? ''}" logo="${actual.logoUrl ?? ''}"');
+    } catch (e) {
+      debugPrint('[Tiquetero] No se pudo refrescar el kiosko: $e');
+    }
   }
 
   @override
@@ -416,25 +497,7 @@ class _TicketSelectionScreenState extends State<TicketSelectionScreen> {
                         ],
                       ),
                     )
-                  : GridView.builder(
-                      padding: const EdgeInsets.fromLTRB(80, 24, 80, 0),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        childAspectRatio: 1.2,
-                        crossAxisSpacing: 20,
-                        mainAxisSpacing: 20,
-                      ),
-                      itemCount: _serviceTypes.length,
-                      itemBuilder: (context, index) {
-                        final st = _serviceTypes[index];
-                        return ServiceTypeCard(
-                          label: st.nombre,
-                          icon: st.icon,
-                          isSelected: _selectedServiceType?.id == st.id,
-                          onTap: () => _onServiceTypeSelected(st),
-                        );
-                      },
-                    ),
+                  : _buildGridServicios(),
         ),
         Padding(
           padding: const EdgeInsets.only(bottom: 16),

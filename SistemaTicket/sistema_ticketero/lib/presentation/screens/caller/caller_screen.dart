@@ -60,17 +60,16 @@ class _CallerScreenState extends State<CallerScreen>
       builder: (context, settings, _) {
         final kiosko = settings.selectedKiosko;
         final videoUrl = kiosko?.videoUrl;
-        final hasVideo = videoUrl != null && videoUrl.isNotEmpty;
 
         return Scaffold(
           body: Stack(
             children: [
-              if (hasVideo)
-                SizedBox.expand(
-                  child: BackgroundVideoWidget(videoUrl: videoUrl),
-                )
-              else
-                const SizedBox.expand(child: ColoredBox(color: Colors.white)),
+              // Se monta siempre: el propio widget ya cae al fondo de respaldo
+              // si no hay video, y así queda un único sitio donde diagnosticar
+              // por qué no se reproduce.
+              SizedBox.expand(
+                child: BackgroundVideoWidget(videoUrl: videoUrl),
+              ),
               Consumer<TicketProvider>(
                 builder: (context, tp, _) {
                   return Column(

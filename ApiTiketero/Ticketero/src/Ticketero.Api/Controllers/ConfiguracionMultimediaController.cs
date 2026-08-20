@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Ticketero.Application.Interfaces;
 using Ticketero.Domain.Entities;
+using Ticketero.Domain.Enums;
 
 namespace Ticketero.Api.Controllers;
 
@@ -117,8 +118,8 @@ public class ConfiguracionMultimediaController : ControllerBase
         var agrupado = new
         {
             KioskoId = kioskoId,
-            Videos = multimedia.Where(m => m.TipoContenido == "Video").OrderBy(m => m.Orden).ToList(),
-            Logos = multimedia.Where(m => m.TipoContenido == "Logo").OrderBy(m => m.Orden).ToList()
+            Videos = multimedia.Where(m => TipoContenidoMultimedia.EsVideo(m.TipoContenido)).OrderBy(m => m.Orden).ToList(),
+            Logos = multimedia.Where(m => TipoContenidoMultimedia.EsLogo(m.TipoContenido)).OrderBy(m => m.Orden).ToList()
         };
         return Ok(agrupado);
     }
