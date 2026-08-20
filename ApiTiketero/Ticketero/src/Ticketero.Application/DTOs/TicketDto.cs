@@ -42,6 +42,7 @@ public class AtenderTicketRequest
 public class AtenderTicketResponse
 {
     public int AtencionId { get; set; }
+    public int? TicketId { get; set; }
     public string Mensaje { get; set; } = string.Empty;
 }
 

@@ -1,5 +1,7 @@
+using Microsoft.EntityFrameworkCore;
 using Ticketero.Application.Interfaces;
 using Ticketero.Domain.Entities;
+using Ticketero.Domain.Enums;
 using Ticketero.Infrastructure.Data;
 
 namespace Ticketero.Infrastructure.Repositories;
@@ -123,6 +125,34 @@ public class UnitOfWork : IUnitOfWork
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         return await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Atencion>> FinalizarAtencionesVencidasAsync(int minutosMaximo, CancellationToken cancellationToken = default)
+    {
+        var corte = DateTime.UtcNow.AddMinutes(-minutosMaximo);
+        var vencidas = await _context.Atenciones
+            .Where(a => a.FechaFin == null && a.FechaInicio <= corte)
+            .ToListAsync(cancellationToken);
+
+        foreach (var atencion in vencidas)
+        {
+            atencion.FechaFin = DateTime.UtcNow;
+            atencion.TiempoAtencionSegundos = (int)(atencion.FechaFin.Value - atencion.FechaInicio).TotalSeconds;
+            atencion.EstadoTicketId = TicketEstado.Cerrado;
+            atencion.Observacion = atencion.Observacion ?? $"Finalizada automáticamente por superar los {minutosMaximo} minutos de atención";
+
+            var ticket = await _context.Tickets.FindAsync(new object[] { atencion.TicketId }, cancellationToken);
+            if (ticket != null && ticket.EstadoTicketId == TicketEstado.EnAtencion)
+            {
+                ticket.EstadoTicketId = TicketEstado.Cerrado;
+                ticket.FechaCierre = ticket.FechaCierre ?? atencion.FechaFin;
+            }
+        }
+
+        if (vencidas.Count > 0)
+            await _context.SaveChangesAsync(cancellationToken);
+
+        return vencidas;
     }
 
     public void Dispose()

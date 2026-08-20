@@ -20,4 +20,5 @@ public class SesionDto
     public DateTime FechaInicio { get; set; }
     public DateTime? FechaFin { get; set; }
     public bool EstaActiva { get; set; }
+    public int? AtencionesFinalizadas { get; set; }
 }

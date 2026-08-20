@@ -94,4 +94,55 @@ public class DerivarTicketUseCaseTests
 
         result.Mensaje.ShouldBe("Ticket derivado exitosamente");
     }
+
+    [Fact]
+    public async Task EjecutarAsync_ShouldDejarTicketNuevo_AfterDerivar()
+    {
+        // Caso 2: el ticket derivado reingresa a la cola del área destino
+        // como Nuevo para poder ser llamado nuevamente.
+        var request = new DerivarTicketRequest
+        {
+            TicketId = 1,
+            AtencionId = 1,
+            AreaDestinoId = 20
+        };
+
+        var atencion = new Atencion
+        {
+            TicketId = 1,
+            UsuarioId = 100,
+            AreaId = 10,
+            FechaInicio = DateTime.UtcNow
+        };
+        var ticket = new Ticket
+        {
+            NumeroTicket = "TST-001",
+            AreaActualId = 10,
+            EstadoTicketId = TicketEstado.EnAtencion
+        }.WithId(1);
+
+        _unitOfWorkMock.Setup(u => u.Tickets.GetByIdAsync(1))
+            .ReturnsAsync(ticket);
+        _unitOfWorkMock.Setup(u => u.Areas.GetByIdAsync(20))
+            .ReturnsAsync(new Area { Descripcion = "Destino" });
+        _unitOfWorkMock.Setup(u => u.Atenciones.GetByIdAsync(1))
+            .ReturnsAsync(atencion);
+        _unitOfWorkMock.Setup(u => u.UsuariosArea.FindAsync(It.IsAny<Expression<Func<UsuarioArea, bool>>>()))
+            .ReturnsAsync(new List<UsuarioArea>
+            {
+                new() { UsuarioId = 100, AreaId = 10 }
+            });
+        _unitOfWorkMock.Setup(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _unitOfWorkMock.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+        _unitOfWorkMock.Setup(u => u.CommitTransactionAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        await _useCase.EjecutarAsync(request);
+
+        ticket.AreaActualId.ShouldBe(20);
+        ticket.EstadoTicketId.ShouldBe(TicketEstado.Nuevo);
+        atencion.EstadoTicketId.ShouldBe(TicketEstado.Cerrado);
+    }
 }

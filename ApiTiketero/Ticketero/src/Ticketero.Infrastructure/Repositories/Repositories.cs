@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Ticketero.Application.Interfaces;
 using Ticketero.Domain.Entities;
+using Ticketero.Domain.Enums;
 
 namespace Ticketero.Infrastructure.Repositories;
 
@@ -41,7 +42,8 @@ public class TicketRepository : GenericRepository<Ticket>, ITicketRepository
     public async Task<IReadOnlyList<Ticket>> GetTicketsPendientesPorAreaAsync(int areaId)
     {
         return await IncludeAllNoTracking()
-            .Where(t => t.AreaActualId == areaId && t.EstadoTicketId != 6 && t.EstadoTicketId != 7)
+            .Where(t => t.AreaActualId == areaId
+                && (t.EstadoTicketId == TicketEstado.Nuevo || t.EstadoTicketId == TicketEstado.EnEspera))
             .OrderBy(t => t.Prioridad!.Nivel)
             .ThenBy(t => t.FechaCreacion)
             .ToListAsync();
@@ -55,7 +57,7 @@ public class TicketRepository : GenericRepository<Ticket>, ITicketRepository
     public async Task<IReadOnlyList<Ticket>> GetTicketsPendientesAsync()
     {
         return await IncludeAllNoTracking()
-            .Where(t => t.EstadoTicketId != 6 && t.EstadoTicketId != 7)
+            .Where(t => t.EstadoTicketId == TicketEstado.Nuevo || t.EstadoTicketId == TicketEstado.EnEspera)
             .OrderBy(t => t.Prioridad!.Nivel)
             .ThenBy(t => t.FechaCreacion)
             .ToListAsync();

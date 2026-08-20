@@ -7,6 +7,7 @@ public interface IUnitOfWork : IDisposable
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);
     Task CommitTransactionAsync(CancellationToken cancellationToken = default);
     Task RollbackTransactionAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Atencion>> FinalizarAtencionesVencidasAsync(int minutosMaximo, CancellationToken cancellationToken = default);
     ITicketRepository Tickets { get; }
     IUsuarioRepository Usuarios { get; }
     IAtencionRepository Atenciones { get; }

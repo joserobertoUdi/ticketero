@@ -15,6 +15,8 @@ public class CerrarTicketUseCase : ICerrarTicketUseCase
 
     public async Task<AtenderTicketResponse> EjecutarAsync(CerrarTicketRequest request)
     {
+        await _unitOfWork.FinalizarAtencionesVencidasAsync(ReglasAtencion.MaximoMinutosAtencion);
+
         var ticket = await _unitOfWork.Tickets.GetByIdAsync(request.TicketId)
             ?? throw new InvalidOperationException($"Ticket {request.TicketId} no encontrado");
 

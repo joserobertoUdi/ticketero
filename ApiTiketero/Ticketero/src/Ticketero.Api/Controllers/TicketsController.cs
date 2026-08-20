@@ -138,23 +138,33 @@ public class TicketsController : ControllerBase
     public async Task<IActionResult> Call(int id, [FromBody] CallTicketRequest request)
     {
         var response = await _llamarTicket.EjecutarAsync(id, request.UserId, request.KioskoId);
-        var ticket = await _unitOfWork.Tickets.GetByIdWithIncludesAsync(id);
+        var ticketId = response.TicketId ?? id;
+        var ticket = await _unitOfWork.Tickets.GetByIdWithIncludesAsync(ticketId);
         return Ok(ticket != null ? MappingService.MapToTicketResponse(ticket) : null);
     }
 
     [HttpPost("{id}/start-attention")]
     public async Task<IActionResult> StartAttention(int id, [FromBody] StartAttentionRequest request)
     {
+        // Caso 1: verificar antes de abrir transacción si el ticket ya tiene
+        // una atención activa para no dejar transacción/vuelta pendientes.
+        var atencionActiva = await _unitOfWork.Atenciones.GetAtencionActivaPorTicketAsync(id);
+        if (atencionActiva != null)
+        {
+            if (atencionActiva.UsuarioId == request.UserId)
+            {
+                // Reintento idempotente del mismo operador.
+                var ownTicket = await _unitOfWork.Tickets.GetByIdWithIncludesAsync(id);
+                return Ok(ownTicket != null ? MappingService.MapToTicketResponse(ownTicket) : null);
+            }
+
+            // Otro operador se quedó con el ticket: avanzar al siguiente disponible.
+            return await _AvanzarAlSiguienteAsync(request, id);
+        }
+
         await _unitOfWork.BeginTransactionAsync();
         try
         {
-            var atencionActiva = await _unitOfWork.Atenciones.GetAtencionActivaPorTicketAsync(id);
-            if (atencionActiva != null)
-            {
-                await _unitOfWork.RollbackTransactionAsync();
-                return BadRequest(new { mensaje = "El ticket ya tiene una atención activa" });
-            }
-
             var sesion = await _unitOfWork.SesionesOperador.GetSesionActivaPorUsuarioAsync(request.UserId);
 
             if (sesion == null)
@@ -209,6 +219,62 @@ public class TicketsController : ControllerBase
             await _unitOfWork.RollbackTransactionAsync();
             throw;
         }
+    }
+
+    // Caso 1: cuando el ticket ya fue tomado por otro operador, este avanza
+    // al siguiente ticket pendiente del área (si existe).
+    private async Task<IActionResult> _AvanzarAlSiguienteAsync(StartAttentionRequest request, int ticketDescartadoId)
+    {
+        var ticketDescartado = await _unitOfWork.Tickets.GetByIdAsync(ticketDescartadoId);
+        if (ticketDescartado == null)
+            return BadRequest(new { mensaje = "Ticket no encontrado" });
+
+        var pendientes = await _unitOfWork.Tickets.GetTicketsPendientesPorAreaAsync(ticketDescartado.AreaActualId);
+        var siguiente = pendientes.FirstOrDefault(t => t.Id != ticketDescartadoId);
+        if (siguiente == null)
+            return Conflict(new
+            {
+                mensaje = $"El ticket {ticketDescartado.NumeroTicket} ya está siendo atendido por otro operador y no hay más tickets pendientes en su cola."
+            });
+
+        // Llama el siguiente ticket (transacción propia del use case).
+        var llamarResponse = await _llamarTicket.EjecutarAsync(siguiente.Id, request.UserId, 0);
+        var siguienteId = llamarResponse.TicketId ?? siguiente.Id;
+
+        var sesion = await _unitOfWork.SesionesOperador.GetSesionActivaPorUsuarioAsync(request.UserId);
+        if (sesion == null)
+        {
+            if (request.PuestoId <= 0)
+                return BadRequest(new { mensaje = "Debe seleccionar un puesto antes de iniciar atención" });
+
+            var puestoValido = await _unitOfWork.Puestos.GetByIdAsync(request.PuestoId);
+            if (puestoValido == null)
+                return BadRequest(new { mensaje = "El puesto especificado no existe" });
+
+            sesion = new SesionOperador
+            {
+                UsuarioId = request.UserId,
+                PuestoId = request.PuestoId,
+                FechaInicio = DateTime.UtcNow
+            };
+            await _unitOfWork.SesionesOperador.AddAsync(sesion);
+            await _unitOfWork.SaveChangesAsync();
+        }
+
+        var atencionRequest = new AtenderTicketRequest
+        {
+            TicketId = siguienteId,
+            UsuarioId = request.UserId,
+            AreaId = siguiente.AreaActualId,
+            ServicioId = siguiente.ServicioId,
+            SesionOperadorId = sesion.Id
+        };
+
+        await _atenderTicket.EjecutarAsync(atencionRequest);
+        await _unitOfWork.SaveChangesAsync();
+
+        var updatedTicket = await _unitOfWork.Tickets.GetByIdWithIncludesAsync(siguienteId);
+        return Ok(updatedTicket != null ? MappingService.MapToTicketResponse(updatedTicket) : null);
     }
 
     [HttpPost("{id}/complete")]

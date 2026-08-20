@@ -17,12 +17,32 @@ public class AtenderTicketUseCase : IAtenderTicketUseCase
 
     public async Task<AtenderTicketResponse> EjecutarAsync(AtenderTicketRequest request)
     {
+        await _unitOfWork.FinalizarAtencionesVencidasAsync(ReglasAtencion.MaximoMinutosAtencion);
+
         var ticket = await _unitOfWork.Tickets.GetByIdAsync(request.TicketId)
             ?? throw new InvalidOperationException($"Ticket {request.TicketId} no encontrado");
 
         if (!EstadosAtendibles.Contains(ticket.EstadoTicketId))
             throw new InvalidOperationException(
                 $"No se puede iniciar atención del ticket {ticket.NumeroTicket}. Estado actual (Id={ticket.EstadoTicketId}) no válido. El ticket debe estar en estado Llamado/Asignado o Nuevo.");
+
+        // Caso 1: si el ticket ya está siendo atendido por otro operador,
+        // el segundo debe avanzar al siguiente ticket (el controlador lo resuelve).
+        var atencionActiva = await _unitOfWork.Atenciones.GetAtencionActivaPorTicketAsync(request.TicketId);
+        if (atencionActiva != null)
+        {
+            if (atencionActiva.UsuarioId != request.UsuarioId)
+                throw new InvalidOperationException(
+                    $"El ticket {ticket.NumeroTicket} ya está siendo atendido por otro operador.");
+
+            // Reintento idempotente del mismo operador.
+            return new AtenderTicketResponse
+            {
+                AtencionId = atencionActiva.Id,
+                TicketId = ticket.Id,
+                Mensaje = "Atención ya iniciada por el mismo operador"
+            };
+        }
 
         var perteneceArea = (await _unitOfWork.UsuariosArea.FindAsync(
             ua => ua.UsuarioId == request.UsuarioId && ua.AreaId == request.AreaId))
@@ -53,6 +73,7 @@ public class AtenderTicketUseCase : IAtenderTicketUseCase
         return new AtenderTicketResponse
         {
             AtencionId = atencion.Id,
+            TicketId = request.TicketId,
             Mensaje = "Atención iniciada correctamente"
         };
     }

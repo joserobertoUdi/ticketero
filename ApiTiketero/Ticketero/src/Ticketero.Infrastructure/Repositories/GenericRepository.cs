@@ -29,7 +29,7 @@ public class GenericRepository<T> : IGenericRepository<T> where T : class
 
     public virtual async Task<IReadOnlyList<T>> FindAsync(Expression<Func<T, bool>> predicate)
     {
-        return await _dbSet.Where(predicate).AsNoTracking().ToListAsync();
+        return await _dbSet.Where(predicate).ToListAsync();
     }
 
     public virtual async Task<PagedResponse<T>> GetPagedAsync(PagedRequest request, Expression<Func<T, bool>>? predicate = null)

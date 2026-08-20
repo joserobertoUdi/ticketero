@@ -21,6 +21,8 @@ public class DerivarTicketUseCase : IDerivarTicketUseCase
         await _unitOfWork.BeginTransactionAsync();
         try
         {
+            await _unitOfWork.FinalizarAtencionesVencidasAsync(ReglasAtencion.MaximoMinutosAtencion);
+
             var ticket = await _unitOfWork.Tickets.GetByIdAsync(request.TicketId)
                 ?? throw new InvalidOperationException($"Ticket {request.TicketId} no encontrado");
 
@@ -46,10 +48,12 @@ public class DerivarTicketUseCase : IDerivarTicketUseCase
             atencion.AreaDestinoId = request.AreaDestinoId;
             atencion.Observacion = request.Observacion;
             atencion.TiempoAtencionSegundos = (int)(DateTime.UtcNow - atencion.FechaInicio).TotalSeconds;
-            atencion.EstadoTicketId = TicketEstado.Asignado;
+            atencion.EstadoTicketId = TicketEstado.Cerrado;
 
             ticket.AreaActualId = request.AreaDestinoId;
-            ticket.EstadoTicketId = TicketEstado.Asignado;
+            // Caso 2: el ticket derivado vuelve a estado Nuevo para reingresar
+            // a la cola de llamada del área de destino.
+            ticket.EstadoTicketId = TicketEstado.Nuevo;
 
             await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.CommitTransactionAsync();

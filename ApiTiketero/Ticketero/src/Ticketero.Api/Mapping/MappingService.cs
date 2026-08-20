@@ -18,7 +18,7 @@ public static class MappingService
         [1] = "pendiente",
         [2] = "pendiente",
         [3] = "en_atencion",
-        [4] = "en_atencion",
+        [4] = "pendiente",
         [5] = "completado",
         [6] = "completado",
         [7] = "cancelado",

@@ -154,6 +154,16 @@ La base de datos `DBTicketero` está compuesta por **21 tablas** principales:
 5. **Cliente** es atendido y el ticket se marca como completado
 6. **Dashboard** refleja las estadísticas en tiempo real
 
+### Reglas de atención
+
+- **Tiempo máximo de atención:** toda atención activa con más de **20 minutos** de duración se
+  finaliza automáticamente en todo el flujo (llamado, inicio de atención, cierre, derivación,
+  apertura y cierre de sesión). La atención queda marcada como `Cerrado`, se calcula su
+  `TiempoAtencionSegundos` y el ticket se cierra con su `FechaCierre`.
+- **Cierre abrupto de pestaña:** al cerrar la ventana de la aplicación mientras se atiende un
+  ticket, la atención activa se finaliza y el ticket se marca como `Cerrado`. Si el operador deja
+  atenciones huérfanas (crash), éstas se recuperan y se cierran automáticamente al reabrir sesión.
+
 ### Comunicación en tiempo real
 
 Todos los eventos (nuevo ticket, llamado, atención, finalización) se transmiten instantáneamente mediante **SignalR** a todos los clientes conectados.

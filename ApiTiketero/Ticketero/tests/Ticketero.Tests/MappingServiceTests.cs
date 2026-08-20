@@ -37,7 +37,7 @@ public class MappingServiceTests
     [InlineData(1, "pendiente")]
     [InlineData(2, "pendiente")]
     [InlineData(3, "en_atencion")]
-    [InlineData(4, "en_atencion")]
+    [InlineData(4, "pendiente")]
     [InlineData(5, "completado")]
     [InlineData(6, "completado")]
     [InlineData(7, "cancelado")]

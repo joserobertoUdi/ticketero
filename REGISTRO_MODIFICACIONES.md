@@ -5,6 +5,64 @@
 
 ---
 
+## ACTUALIZACIÓN (Agosto 2026) — Flujo de atención y regla de tiempo máximo
+
+### 1. Corrección: persistencia de cambios en atenciones activas
+
+**Contexto:** Al cerrar la pestaña de la aplicación mientras un operador atendía un ticket,
+`CerrarSesionUseCase` y `AbrirSesionUseCase` cargaban las atenciones activas con
+`Atenciones.FindAsync(...)`, las modificaban (`FechaFin`, `EstadoTicketId`, etc.) y luego
+llamaban `SaveChangesAsync`. Sin embargo, `GenericRepository.FindAsync` usaba `AsNoTracking()`,
+por lo que las entidades quedaban **desprendidas** del `DbContext` y los cambios **no se
+persistían** (el ticket quedaba "a la deriva", la cola bloqueada y `FechaFin == null`).
+
+**Cambios:**
+- `Repositories/GenericRepository.cs` — `FindAsync()` dejó de usar `AsNoTracking()`: ahora
+  devuelve entidades rastreadas para que las modificaciones posteriores se persistan.
+- `UseCases/LlamarTicketUseCase.cs` — al avanzar al siguiente ticket pendiente del área, ahora
+  re-consulta el ticket con `GetByIdAsync` (rastreado) antes de modificar su `EstadoTicketId`,
+  garantizando que el cambio se guarde.
+
+### 2. Nueva regla: finalización automática de atenciones vencidas (20 minutos)
+
+**Regla:** Toda atención activa (`FechaFin == null`) con más de **20 minutos** de duración se
+finaliza automáticamente en todo el flujo.
+
+**Cambios:**
+- `Domain/Enums/ReglasAtencion.cs` **(NUEVO)** — Constante `MaximoMinutosAtencion = 20`.
+- `Application/Interfaces/IUnitOfWork.cs` — Nueva firma
+  `FinalizarAtencionesVencidasAsync(int minutosMaximo, CancellationToken = default)`.
+- `Infrastructure/Repositories/UnitOfWork.cs` — Implementación: localiza atenciones activas con
+  `FechaInicio <= ahora - N minutos`, les asigna `FechaFin`, `TiempoAtencionSegundos`,
+  `EstadoTicketId = Cerrado` y observación automática; además cierra el ticket
+  (`Cerrado` + `FechaCierre`). Persiste si encontró vencidas.
+- La regla se invoca al inicio de **todos** los casos de uso del flujo:
+  `LlamarTicketUseCase`, `AtenderTicketUseCase`, `CerrarTicketUseCase`, `DerivarTicketUseCase`,
+  `CerrarSesionUseCase` y `AbrirSesionUseCase`.
+- **Al cerrar la pestaña:** la regla corre antes del cierre normal de atenciones, de modo que si
+  una atención ya superó el límite queda finalizada por la regla y el cierre de sesión procesa
+  el resto.
+
+### 3. Pruebas actualizadas y nuevas
+
+**Corrección en pruebas de integración (`TicketFlujoIntegracionTests.cs`):**
+- Se eliminó el uso de `ServicioId = 1` / `TipoTicketId = 1` "fantasma": ahora se siembran filas
+  reales de `Servicio`, `TipoTicket` y las 8 de `EstadoTicket` (IDs 1-8 acorde al enum).
+- Motivo: `IncludeAll()` usa navegaciones **requeridas** que EF traduce a `INNER JOIN`; al no
+  existir las filas referenciadas, la consulta descartaba todos los tickets (cola vacía).
+
+**Tests nuevos:**
+| Test | Qué valida |
+|------|------------|
+| `CerrarSesion_FinalizaAtencionVencida_Automaticamente` | Atención de 25 min finalizada al cerrar la pestaña |
+| `Llamar_AlInicioDelFlujo_FinalizaAtencionesVencidas` | La regla se aplica al llamar tickets: atención vencida se cierra y ticket queda `Cerrado` |
+
+**Resultado:** Suite completa en verde — **97 pruebas, 0 errores**.
+
+---
+
+---
+
 ## RESUMEN GENERAL
 
 | Indicador | Valor |
