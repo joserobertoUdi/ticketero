@@ -215,6 +215,23 @@ flutter run
 
 Ejecuta los scripts SQL en `BD_Ticketero/` en orden alfabético sobre una instancia de SQL Server.
 
+### Inicio local completo (Windows)
+
+Desde la raíz del repositorio puedes aplicar las migraciones sobre SQL Server local,
+iniciar la API y abrir Flutter para Windows con un solo comando:
+
+```powershell
+.\iniciar-local.ps1
+```
+
+Requiere SQL Server local, .NET SDK 10 y Flutter en el `PATH`. Para otro destino de Flutter,
+por ejemplo Chrome, usa `./iniciar-local.ps1 -Device chrome`. Para evitar aplicar las
+migraciones en una ejecución posterior, usa `./iniciar-local.ps1 -SkipMigrations`. Docker es
+opcional mediante `./iniciar-local.ps1 -DatabaseMode Docker`.
+
+Consulta la [guía de inicio local desde cero](./GUIA_INICIO_LOCAL.md) para instalar los
+requisitos y configurar otra máquina.
+
 ---
 
 ## 🤝 Contribuciones
